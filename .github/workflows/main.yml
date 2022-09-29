@@ -60,5 +60,5 @@ jobs:
           with:
               upload_url: ${{ needs.create-release.outputs.UPLOAD_URL }}
               asset_path: ./target/release/hkdl.exe
-              asset_name: hkdl-${{ matrix.platform }}.exe
+              asset_name: hkdl.exe
               asset_content_type: application/octet-stream

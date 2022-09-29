@@ -36,21 +36,15 @@ idk
 ## **Installation**
 ### Windows
 1. Navigate to the [Releases](https://github.com/jngo102/hkdl/releases) page.
-2. Download the latest release for your platform. This will be `hkdl_{version}_x64_en-US.msi`.
-3. Open up the location of the download in your file system and double click on the file that you downloaded.
-4. Follow the steps in the wizard to install hkdl. Most steps can be left with their default values.
+2. Download the latest release for your platform. This will be `hkdl.exe`.
 
 ### macOS
 1. Navigate to the [Releases](https://github.com/jngo102/hkdl/releases) page.
-2. Download the latest release for your platform. This will be `hkdl_{version}_x64.dmg`.
-3. Open up the location of the download in your file system and double click on the file that you downloaded.
-4. Follow the steps in the wizard to install hkdl.
+2. Download the latest release for your platform. This will be `hkdl-macos-latest`.
 
 ### Linux
 1. Navigate to the [Releases](https://github.com/jngo102/hkdl/releases) page.
-2. The file that you will download varies depending on which package manager you use. Refer to your distribution's manual for information on how to install packages for your system. For Ubuntu and Debian distributions, this is `hkdl_{version}_amd64.deb`.
-3. Open up the location of the download in your file system.
-4. Using your package manager, install the package that you downloaded.
+2. The file that you will download varies depending on which package manager you use. Refer to your distribution's manual for information on how to install packages for your system. For Ubuntu and Debian distributions, this is `hkdl-ubuntu-latest`.
 
 ## **Building from Source**
 1. Clone this repository: `git clone https://github.com/jngo102/hkdl.git`
