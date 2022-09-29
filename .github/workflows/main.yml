@@ -42,7 +42,8 @@ jobs:
           with:
               command: build
               args: --release --all-features
-        - name: Upload release asset
+        - name: Upload release asset (Linux/macOS)
+          if: ${{ matrix.platform != 'windows-latest' }}
           uses: actions/upload-release-asset@v1
           env:
               GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,4 +51,14 @@ jobs:
               upload_url: ${{ needs.create-release.outputs.UPLOAD_URL }}
               asset_path: ./target/release/hkdl
               asset_name: hkdl-${{ matrix.platform }}
+              asset_content_type: application/octet-stream  
+        - name: Upload release asset (Windows)
+          if: ${{ matrix.platform == 'windows-latest' }}
+          uses: actions/upload-release-asset@v1
+          env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          with:
+              upload_url: ${{ needs.create-release.outputs.UPLOAD_URL }}
+              asset_path: ./target/release/hkdl.exe
+              asset_name: hkdl-${{ matrix.platform }}.exe
               asset_content_type: application/octet-stream
