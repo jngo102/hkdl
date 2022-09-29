@@ -1,4 +1,4 @@
-name: "Publish"
+name: Publish
 on: [push, pull_request]
 
 jobs:
@@ -10,7 +10,8 @@ jobs:
             - name: Get date format for release tag
               id: date
               run: echo "::set-output name=today::$(date +'%d.%m.%Y')"
-            - uses: actions/checkout@v2
+            - name: Checkout
+              uses: actions/checkout@v2
             - name: Create release
               id: create_release
               uses: actions/create-release@v1.1.0
@@ -30,12 +31,14 @@ jobs:
                 platform: [macos-latest, ubuntu-latest, windows-latest]
         runs-on: ${{ matrix.platform }}
         steps:
-        - uses: actions/checkout@v2
+        - name: Checkout
+          uses: actions/checkout@v2
         - name: Install Rust
           uses: actions-rs/toolchain@v1
           with:
               toolchain: stable
         - name: Setup cargo and build
+          uses: actions-rs/cargo@v1
           id: cargo_build
           with:
               command: build
