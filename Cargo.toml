@@ -1,0 +1,36 @@
+name = "hkdl"
+version = "0.0.1"
+description = "A CLI tool for managing Hollow Knight mods."
+authors = ["jngo102"]
+license = "MIT"
+repository = "https://github.com/jngo102/hkdl"
+default-run = "hkdl"
+edition = "2021"
+rust-version = "1.64"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.0.2", features = ["derive"] }
+directories = "4.0.1"
+futures-util = "0.3.24"
+log = "0.4.17"
+native-dialog = "0.6.3"
+num_cpus = "1.13.1"
+open = "3.0.3"
+quick-xml = { version = "^0.25", features = ["serialize"] }
+reqwest = { version = "^0.11", features = ["blocking", "stream"] }
+serde = { version = "^1", features = ["derive"] }
+serde_json = "1.0.85"
+sha256 = "1.0.3"
+simple-logging = "2.0.2"
+sysinfo = "0.26.4"
+threadpool = "1.8.1"
+tokio = { version = "1.21.2", features = ["rt"] }
+unzip = "0.1.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
