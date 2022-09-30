@@ -23,7 +23,7 @@ impl Default for Settings {
             mods_path: "".to_string(),
             language: "English".to_string(),
             mod_links: LocalModLinks::default(),
-            profiles: vec![],
+            profiles: Vec::new(),
         }
     }
 }

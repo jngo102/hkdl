@@ -4,7 +4,6 @@ mod mod_links;
 use app::app::App;
 use app::args::{Arguments, SubCommand};
 use app::profile::Profile;
-use app::settings::Settings;
 use clap::Parser;
 use directories::BaseDirs;
 use futures_util::StreamExt;
@@ -12,20 +11,16 @@ use log::{error, info, warn, LevelFilter};
 use mod_links::api::*;
 use mod_links::local::*;
 use mod_links::remote::*;
-use open;
 use reqwest;
 use serde_json;
-use serde_json::{json, Value};
 use sha256::digest_file;
 use simple_logging;
 use std::cmp::min;
-use std::convert::Into;
 use std::env;
 use std::fs;
-use std::fs::{File, ReadDir};
-use std::io::{Cursor, Read, self, Write};
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::fs::File;
+use std::io::{self, Cursor, Write};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{mpsc, Mutex, MutexGuard};
 use sysinfo::{ProcessExt, System, SystemExt};
@@ -63,9 +58,6 @@ fn main() {
     let state = AppState(Default::default());
     exit_game();
     check_settings(&state);
-    if !check_api_installed(&state) {
-        install_api(&state);
-    }
     auto_detect(&state);
     fetch_mod_list(&state);
     parse_args(&state);
@@ -95,14 +87,24 @@ fn auto_detect(state: &AppState) {
             }) {
                 Some(game_path) => {
                     let mut input = "".to_string();
-                    print!("Game path detected at: {}. Is this correct? [y/n] ", game_path);
+                    print!(
+                        "Game path detected at: {}. Is this correct? [y/n] ",
+                        game_path
+                    );
                     io::stdout().flush().unwrap();
-                    io::stdin().read_line(&mut input).expect("Error: unable to read user input.");
+                    io::stdin()
+                        .read_line(&mut input)
+                        .expect("Error: unable to read user input.");
                     while input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "n" {
                         println!("This is not a valid input. Please enter 'y' for 'yes' or 'n' for 'no'.");
-                        print!("Game path detected at: {}. Is this correct? [y/n] ", game_path);
+                        print!(
+                            "Game path detected at: {}. Is this correct? [y/n] ",
+                            game_path
+                        );
                         io::stdout().flush().unwrap();
-                        io::stdin().read_line(&mut input).expect("Error: unable to read user input.");
+                        io::stdin()
+                            .read_line(&mut input)
+                            .expect("Error: unable to read user input.");
                     }
                     if input.trim() == "y" {
                         match SUFFIXES.into_iter().find(|suffix| {
@@ -124,7 +126,6 @@ fn auto_detect(state: &AppState) {
                             }
                         }
                     } else {
-
                     }
                 }
                 None => {
@@ -156,14 +157,24 @@ fn auto_detect(state: &AppState) {
             }) {
                 Some(game_path) => {
                     let mut input = "".to_string();
-                    print!("Game path detected at: {}. Is this correct? [y/n] ", game_path);
+                    print!(
+                        "Game path detected at: {}. Is this correct? [y/n] ",
+                        game_path
+                    );
                     io::stdout().flush().unwrap();
-                    io::stdin().read_line(&mut input).expect("Error: unable to read user input.");
+                    io::stdin()
+                        .read_line(&mut input)
+                        .expect("Error: unable to read user input.");
                     while input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "n" {
                         println!("This is not a valid input. Please enter 'y' for 'yes' or 'n' for 'no'.");
-                        print!("Game path detected at: {}. Is this correct? [y/n] ", game_path);
+                        print!(
+                            "Game path detected at: {}. Is this correct? [y/n] ",
+                            game_path
+                        );
                         io::stdout().flush().unwrap();
-                        io::stdin().read_line(&mut input).expect("Error: unable to read user input.");
+                        io::stdin()
+                            .read_line(&mut input)
+                            .expect("Error: unable to read user input.");
                     }
                     if input.trim().to_lowercase() == "y" {
                         match SUFFIXES.into_iter().find(|suffix| {
@@ -207,24 +218,6 @@ fn auto_detect(state: &AppState) {
     }
 }
 
-/// Check and return whether the Modding API has been installed
-/// * `state` - The state of the application
-fn check_api_installed(state: &AppState) -> bool {
-    let app_state = state.0.lock().unwrap();
-    let mods_path = &app_state.settings.mods_path;
-    let managed_path: PathBuf = [mods_path.as_str(), ".."].iter().collect();
-    let vanilla_assembly: PathBuf = [
-        managed_path.to_str().unwrap(),
-        "Assembly-CSharp.dll.vanilla",
-    ]
-    .iter()
-    .collect();
-    let modded_assembly: PathBuf = [managed_path.to_str().unwrap(), "Assembly-CSharp.dll.modded"]
-        .iter()
-        .collect();
-    vanilla_assembly.exists() && !modded_assembly.exists()
-}
-
 /// Load the settings JSON file into the settings object, or create the file if it does not exist
 /// and open the log file
 /// # Arguments
@@ -255,18 +248,182 @@ fn check_settings(state: &AppState) {
     if PathBuf::from_str(settings_path.as_str()).unwrap().exists() {
         let mut state = state.0.lock().unwrap();
         let settings_raw_text = fs::read_to_string(settings_path).unwrap();
-        state.settings = match serde_json::from_str(settings_raw_text.as_str()) {
-            Ok(settings) => settings,
-            Err(e) => {
-                error!("Failed to deserialize settings: {}", e);
-                Settings::default()
-            }
-        };
+        state.settings = serde_json::from_str(settings_raw_text.as_str()).unwrap();
     }
 }
 
+/// Create a new profile and save it to settings
+/// # Arguments
+/// * `state` - The state of the application
+fn create_profile(state: &AppState) {
+    let mut app_state = state.0.lock().unwrap();
+
+    let mut profile_name = "".to_string();
+    let mut mod_names = Vec::new();
+
+    print!("Enter the name of the new profile: ");
+    io::stdout().flush().unwrap();
+    io::stdin().read_line(&mut profile_name).unwrap();
+    let mut profile_exists = false;
+    for profile in app_state.settings.profiles.iter() {
+        if profile.name == profile_name {
+            profile_exists = true;
+        }
+    }
+    while profile_name == "".to_string() || profile_exists {
+        if profile_name == "".to_string() {
+            println!("Profile name cannot be empty.");
+        } else if profile_exists {
+            println!("Profile {:?} already exists.", profile_name);
+        }
+
+        print!("Enter the name of the new profile: ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut profile_name).unwrap();
+
+        profile_exists = false;
+        for profile in app_state.settings.profiles.iter() {
+            if profile.name == profile_name {
+                profile_exists = true;
+            }
+        }
+    }
+
+    profile_name = profile_name.trim().to_string();
+
+    print!("Enter the name of a mod to include in the profile (leave blank to finish): ");
+    io::stdout().flush().unwrap();
+    let mut mod_name = "".to_string();
+    io::stdin().read_line(&mut mod_name).unwrap();
+    mod_name = mod_name.trim().replace(" ", "").to_lowercase();
+    let mut manifest_name = "".to_string();
+    while mod_name != "".to_string() {
+        let mut mod_exists = app_state
+            .settings
+            .mod_links
+            .manifests
+            .iter()
+            .any(|manifest| {
+                manifest_name = manifest.name.clone();
+                manifest.name.replace(" ", "").to_lowercase() == mod_name
+            });
+        while !mod_exists && mod_name != "".to_string() {
+            println!("Mod {:?} does not exist.", mod_name);
+            print!("Enter the name of a mod to include in the profile (leave blank to finish): ");
+            io::stdout().flush().unwrap();
+            mod_name = "".to_string();
+            io::stdin().read_line(&mut mod_name).unwrap();
+            mod_name = mod_name.trim().replace(" ", "").to_lowercase();
+            mod_exists = app_state
+                .settings
+                .mod_links
+                .manifests
+                .iter()
+                .any(|manifest| {
+                    manifest_name = manifest.name.clone();
+                    manifest.name.replace(" ", "").to_lowercase() == mod_name
+                });
+        }
+        mod_names.push(manifest_name.clone());
+        print!("Enter the name of a mod to include in the profile (leave blank to finish): ");
+        io::stdout().flush().unwrap();
+        mod_name = "".to_string();
+        io::stdin().read_line(&mut mod_name).unwrap();
+        mod_name = mod_name.trim().replace(" ", "").to_lowercase();
+    }
+
+    app_state.settings.profiles.push(Profile {
+        name: profile_name,
+        mods: mod_names,
+    });
+}
+
+/// Delete a profile from settings
+/// # Arguments
+/// * `state` - The state of the application
+fn delete_profile(state: &AppState) {
+    let mut app_state = state.0.lock().unwrap();
+    if app_state.settings.profiles.len() == 0 {
+        println!("No profiles to delete.");
+        return;
+    }
+
+    print!("Enter the name of the profile to delete: ");
+    io::stdout().flush().unwrap();
+    let mut profile_name = "".to_string();
+    io::stdin().read_line(&mut profile_name).unwrap();
+    profile_name = profile_name.trim().to_string();
+    let mut profile_exists = app_state
+        .settings
+        .profiles
+        .iter()
+        .any(|profile| profile.name == profile_name);
+    while !profile_exists {
+        println!("Profile {:?} does not exist.", profile_name);
+        profile_name = "".to_string();
+        print!("Enter the name of the profile to delete: ");
+        io::stdout().flush().unwrap();
+        io::stdin().read_line(&mut profile_name).unwrap();
+        profile_name = profile_name.trim().to_string();
+        profile_exists = app_state
+            .settings
+            .profiles
+            .iter()
+            .any(|profile| profile.name == profile_name);
+    }
+    (*app_state)
+        .settings
+        .profiles
+        .retain(|p| p.name != profile_name);
+
+    println!("Profile {:?} deleted.", profile_name);
+}
+
+/// Disables the Modding API
+/// # Arguments
+/// * `state` - The state of the application
+fn disable_api(state: &AppState) {
+    let mods_path: String;
+    {
+        let app_state = state.0.lock().unwrap();
+        mods_path = app_state.settings.mods_path.clone();
+    }
+    let managed_path: PathBuf = [mods_path.as_str(), ".."].iter().collect();
+    let assembly: PathBuf = [managed_path.to_str().unwrap(), "Assembly-CSharp.dll"]
+        .iter()
+        .collect();
+    let vanilla_assembly: PathBuf = [
+        managed_path.to_str().unwrap(),
+        "Assembly-CSharp.dll.vanilla",
+    ]
+    .iter()
+    .collect();
+    let modded_assembly: PathBuf = [managed_path.to_str().unwrap(), "Assembly-CSharp.dll.modded"]
+        .iter()
+        .collect();
+    if vanilla_assembly.exists() && !modded_assembly.exists() {
+        match fs::rename(assembly.clone(), modded_assembly) {
+            Ok(_) => info!("Successfully renamed Assembly-CSharp to modded assembly backup."),
+            Err(e) => error!(
+                "Failed to rename Assembly-CSharp to modded assembly backup: {}",
+                e
+            ),
+        }
+
+        match fs::rename(vanilla_assembly, assembly) {
+            Ok(_) => info!("Successfully replaced modded Assembly-CSharp with vanilla assembly."),
+            Err(e) => error!(
+                "Failed to replace modded Assembly-CSharp with vanilla assembly: {}",
+                e
+            ),
+        }
+    }
+
+    warn!("No action was taken.");
+}
+
 /// Move a mod folder into the Disabled folder if it is located in the Mods folder
-/// # Argumentz`
+/// # Arguments`
 /// *`mod_name` - The name of the mod folder to be moved into the Disabled folder
 /// * `state` - The state of the application
 fn disable_mod(mod_name: String, state: &AppState) {
@@ -274,12 +431,12 @@ fn disable_mod(mod_name: String, state: &AppState) {
     let mut app_state = state.0.lock().unwrap();
     let mods_path = &app_state.settings.mods_path;
     let mod_path: PathBuf = [mods_path.clone(), mod_name.clone()].iter().collect();
-    let disabled_mods_path: PathBuf = [mods_path.to_string(), String::from("Disabled")]
+    let disabled_mods_path: PathBuf = [mods_path.to_string(), "Disabled".to_string()]
         .iter()
         .collect();
     let disabled_mod_path: PathBuf = [
         mods_path.to_string(),
-        String::from("Disabled"),
+        "Disabled".to_string(),
         mod_name.clone(),
     ]
     .iter()
@@ -358,7 +515,8 @@ async fn download_mod(tx: mpsc::Sender<u8>, name: String, url: String, mods_path
             file.write_all(&chunk).unwrap();
             let new = min(downloaded + (chunk.len() as u64), total_size);
             downloaded = new;
-            tx.send((((new as f64) / (total_size as f64)) * 100.0).floor() as u8).expect("Failed to send download progress.");
+            tx.send((((new as f64) / (total_size as f64)) * 100.0).floor() as u8)
+                .expect("Failed to send download progress.");
         }
     }
 
@@ -388,12 +546,12 @@ async fn download_mod(tx: mpsc::Sender<u8>, name: String, url: String, mods_path
 /// * `state` - The state of the application
 fn enable_mod(mod_name: String, state: &AppState) {
     info!("Enabling mod {:?}", mod_name);
-    let mut state = state.0.lock().unwrap();
-    let mods_path = &state.settings.mods_path;
+    let mut app_state = state.0.lock().unwrap();
+    let mods_path = &app_state.settings.mods_path;
     let mod_path: PathBuf = [mods_path.to_string(), mod_name.clone()].iter().collect();
     let disabled_mod_path: PathBuf = [
         mods_path.to_string(),
-        String::from("Disabled"),
+        "Disabled".to_string(),
         mod_name.clone(),
     ]
     .iter()
@@ -414,7 +572,7 @@ fn enable_mod(mod_name: String, state: &AppState) {
         warn!("Path {:?} does not exist.", mod_path.to_str().unwrap());
     }
 
-    (*state)
+    (*app_state)
         .settings
         .mod_links
         .manifests
@@ -429,12 +587,14 @@ fn enable_mod(mod_name: String, state: &AppState) {
 /// Manually select the path of the game's executable
 /// # Arguments
 /// * `app` - The mutex guarding the application state
-fn enter_game_path(mut app: MutexGuard<App>) {
+fn enter_game_path(app: MutexGuard<App>) {
     warn!("Entering game path manually.");
     print!("Enter your game path: ");
     io::stdout().flush().unwrap();
     let mut entered_path = String::new();
-    io::stdin().read_line(&mut entered_path).expect("Error: entered path is not valid.");
+    io::stdin()
+        .read_line(&mut entered_path)
+        .expect("Error: entered path is not valid.");
     set_game_path(app, entered_path);
 }
 
@@ -459,7 +619,9 @@ fn set_game_path(mut app: MutexGuard<App>, mut game_path: String) {
         print!("Enter your game path: ");
         io::stdout().flush().unwrap();
         game_path = String::new();
-        io::stdin().read_line(&mut game_path).expect("Error: entered path is not valid.");
+        io::stdin()
+            .read_line(&mut game_path)
+            .expect("Error: entered path is not valid.");
         path = PathBuf::from_str(game_path.trim()).unwrap();
         match SUFFIXES.into_iter().find(|suffix| {
             let path_buf: PathBuf = [path.clone(), PathBuf::from_str(suffix).unwrap()]
@@ -500,6 +662,7 @@ fn exit_app(state: &AppState) {
     if settings_path.exists() {
         let settings_file = File::options()
             .write(true)
+            .truncate(true)
             .open(settings_path.as_path())
             .unwrap();
         match serde_json::to_writer_pretty(settings_file, &settings) {
@@ -540,14 +703,11 @@ fn exit_game() {
 fn fetch_mod_list(state: &AppState) {
     let mut state = state.0.lock().unwrap();
     let client = reqwest::blocking::Client::new();
-    match client
-        .get(MOD_URL)
-        .send()
-    {
+    match client.get(MOD_URL).send() {
         Ok(response) => {
             let content = response.text().expect("Failed to get content of mod list.");
             let mut remote_mod_links = RemoteModLinks::new();
-            let mut mods_json = "".to_string();
+            let mods_json: String;
             match quick_xml::de::from_str(content.as_str()) {
                 Ok(value) => {
                     info!("Successfully parsed ModLinks XML");
@@ -635,10 +795,6 @@ fn install_api(state: &AppState) {
         Ok(value) => {
             info!("Successfully parsed API XML.");
             api_links = value;
-            info!(
-                "API XML\n{}",
-                serde_json::to_string_pretty(&api_links).unwrap()
-            );
         }
         Err(e) => error!("Failed to parse API XML: {}", e),
     }
@@ -661,9 +817,19 @@ fn install_api(state: &AppState) {
     .collect();
     let api_url: String;
     match env::consts::OS {
-        "linux" => api_url = "https://github.com/hk-modding/api/releases/latest/download/ModdingApiLinux.zip".to_string(),
-        "mac" => api_url = "https://github.com/hk-modding/api/releases/latest/download/ModdingApiMac.zip".to_string(),
-        "windows" => api_url = "https://github.com/hk-modding/api/releases/latest/download/ModdingApiWin.zip".to_string(),
+        "linux" => {
+            api_url =
+                "https://github.com/hk-modding/api/releases/latest/download/ModdingApiLinux.zip"
+                    .to_string()
+        }
+        "mac" => {
+            api_url = "https://github.com/hk-modding/api/releases/latest/download/ModdingApiMac.zip"
+                .to_string()
+        }
+        "windows" => {
+            api_url = "https://github.com/hk-modding/api/releases/latest/download/ModdingApiWin.zip"
+                .to_string()
+        }
         _ => panic!("OS not supported."),
     }
 
@@ -738,28 +904,42 @@ fn install_api(state: &AppState) {
 /// * `state` - The state of the application
 fn install_mod(mut mod_name: String, state: &AppState) {
     info!("Installing mod {:?}", mod_name);
-    
+
     let mut mod_link = "".to_string();
 
-    let mut manifests = Vec::new();
+    let manifests: Vec<LocalModManifest>;
     {
         let app_state = state.0.lock().unwrap();
         manifests = app_state.settings.mod_links.manifests.clone();
     }
 
     for manifest in manifests {
-        if manifest.name.replace(" ", "").to_lowercase() == mod_name.replace(" ", "").to_lowercase() {
+        if manifest.name.replace(" ", "").to_lowercase() == mod_name.replace(" ", "").to_lowercase()
+        {
             mod_name = manifest.name.clone();
             mod_link = manifest.link.link;
-            manifest.dependencies.dependencies.iter().for_each(|dependency| {
-                install_mod(dependency.to_string(), state);
-            });
+            manifest
+                .dependencies
+                .dependencies
+                .iter()
+                .for_each(|dependency| {
+                    install_mod(dependency.to_string(), state);
+                });
         }
     }
 
-    let mut app_state = state.0.lock().unwrap();
-    (*app_state).current_download_progress = 0;
-    let mods_path = app_state.settings.mods_path.clone();
+    if mod_link == "".to_string() {
+        print_and_log(format!("Mod {:?} not found.", mod_name));
+        return;
+    }
+
+    let mods_path: String;
+    {
+        let mut app_state = state.0.lock().unwrap();
+        (*app_state).current_download_progress = 0;
+        mods_path = app_state.settings.mods_path.clone();
+    }
+
     let mod_path: PathBuf = [mods_path.as_str(), mod_name.as_str()].iter().collect();
     let disabled_mod_path: PathBuf = [mods_path.as_str(), "Disabled", mod_name.as_str()]
         .iter()
@@ -768,7 +948,10 @@ fn install_mod(mut mod_name: String, state: &AppState) {
         warn!("Mod {:?} is already installed and enabled.", mod_name);
         return;
     } else if disabled_mod_path.exists() {
-        warn!("Mod {:?} already exists but is disabled, enabling it instead.", mod_name);
+        warn!(
+            "Mod {:?} already exists but is disabled, enabling it instead.",
+            mod_name
+        );
         enable_mod(mod_name.clone(), state);
         return;
     }
@@ -784,78 +967,222 @@ fn install_mod(mut mod_name: String, state: &AppState) {
         });
     });
 
-    while app_state.current_download_progress < 100 {
-        print!("Downloading mod {:?}: {}%\r", mod_name, app_state.current_download_progress);
-        std::io::stdout().flush().unwrap();
-        (*app_state).current_download_progress = rx.recv().unwrap();
-    }
+    {
+        let mut app_state = state.0.lock().unwrap();
 
-    println!("Downloading mod {:?}: {}%!", mod_name, app_state.current_download_progress);
+        while app_state.current_download_progress < 100 {
+            print!(
+                "Downloading mod {:?}: {}%\r",
+                mod_name, app_state.current_download_progress
+            );
+            std::io::stdout().flush().unwrap();
+            (*app_state).current_download_progress = rx.recv().unwrap();
+        }
 
-    for i in 0..app_state.settings.mod_links.manifests.len() {
-        if app_state.settings.mod_links.manifests[i].name == mod_name {
-            app_state.settings.mod_links.manifests[i].installed = true;
-            app_state.settings.mod_links.manifests[i].enabled = true;
+        println!(
+            "Downloading mod {:?}: {}%!",
+            mod_name, app_state.current_download_progress
+        );
+
+        for i in 0..app_state.settings.mod_links.manifests.len() {
+            if app_state.settings.mod_links.manifests[i].name == mod_name {
+                app_state.settings.mod_links.manifests[i].installed = true;
+                app_state.settings.mod_links.manifests[i].enabled = true;
+            }
         }
     }
 }
 
+/// Parse arguments passed to application
+/// # Arguments
+/// * `state` - The state of the application
 fn parse_args(state: &AppState) {
     let args = Arguments::parse();
     match args.cmd {
-        SubCommand::Add { mod_name } => {
-            install_mod(mod_name, state);
-        },
-        SubCommand::Info { mod_name } => {
+        SubCommand::Add { mut query } => {
+            query = query.replace(" ", "").to_lowercase();
+            if query == "api" {
+                enable_api(state);
+            } else if query == "profile" {
+                create_profile(state);
+            } else {
+                install_mod(query, state);
+            }
+        }
+        SubCommand::Info { mut query } => {
             let app_state = state.0.lock().unwrap();
-            app_state.settings.mod_links.manifests.iter().for_each(|manifest| {
-                if manifest.name.to_lowercase().replace(" ", "") == mod_name.to_lowercase().replace(" ", "") {
-                    println!("Name:\t\t{}", manifest.name);
-                    println!("Description:\t{}", manifest.description);
-                    println!("Version:\t{}", manifest.version);
-                    println!("SHA256:\t\t{}", manifest.link.sha256);
-                    println!("Repository:\t{}", manifest.repository);
-                    println!("Dependencies:");
-                    manifest.dependencies.dependencies.iter().for_each(|dependency| {
-                        println!("\t- {}", dependency);
-                    });
-                    match &manifest.tags {
-                        Some(tags) => {
-                            println!("Tags:");
-                            tags.tags.iter().for_each(|tag| {
-                                println!("\t- {}", tag);
-                            });
-                        },
-                        None => println!("Tags: None"),
+            query = query.replace(" ", "").to_lowercase();
+            app_state
+                .settings
+                .mod_links
+                .manifests
+                .iter()
+                .for_each(|manifest| {
+                    if manifest.name.to_lowercase().replace(" ", "") == query {
+                        println!("Mod:\t\t{}", manifest.name);
+                        println!("Description:\t{}", manifest.description);
+                        println!("Version:\t{}", manifest.version);
+                        println!("SHA256:\t\t{}", manifest.link.sha256);
+                        println!("Repository:\t{}", manifest.repository);
+                        if manifest.dependencies.dependencies.len() > 0 {
+                            println!("Dependencies:");
+                            manifest
+                                .dependencies
+                                .dependencies
+                                .iter()
+                                .for_each(|dependency| {
+                                    println!("\t- {}", dependency);
+                                });
+                        } else {
+                            println!("Dependencies:\tNone");
+                        }
+                        match &manifest.tags {
+                            Some(tags) => {
+                                println!("Tags:");
+                                tags.tags.iter().for_each(|tag| {
+                                    println!("\t- {}", tag);
+                                });
+                            }
+                            None => println!("Tags:\t\tNone"),
+                        }
+                        println!("Enabled:\t{}", manifest.enabled);
+                        println!("Installed:\t{}", manifest.installed);
                     }
-                    println!("Enabled:\t{}", manifest.enabled);
-                    println!("Installed:\t{}", manifest.installed);
+                });
+
+            match app_state.settings.profiles.iter().find(|profile| profile.name.trim().to_lowercase() == query) {
+                Some(profile) => {
+                    println!("Profile: {}", profile.name);
+                    profile.mods.iter().for_each(|mod_name| {
+                        println!("\t- {}", mod_name);
+                    });
                 }
-            });
-        },
+                None => error!("Failed to find a profile of the name {:?}", query),
+            }
+        }
         SubCommand::List { filter } => {
             let app_state = state.0.lock().unwrap();
-            app_state.settings.mod_links.manifests.iter().for_each(|manifest| {
-                match &filter {
-                    Some(filter) => {
-                        if manifest.name.to_lowercase().contains(filter.as_str()) {
+            match filter {
+                Some(filter) => match filter.as_str() {
+                    "profiles" => {
+                        app_state.settings.profiles.iter().for_each(|profile| {
+                            if profile.name == app_state.settings.current_profile {
+                                println!("*** {} ***", profile.name);
+                            } else {
+                                println!("{}", profile.name);
+                            }
+                        });
+                    }
+                    "installed" => {
+                        app_state
+                            .settings
+                            .mod_links
+                            .manifests
+                            .iter()
+                            .for_each(|manifest| {
+                                if manifest.installed {
+                                    println!("{}", manifest.name);
+                                }
+                            });
+                    }
+                    "enabled" => {
+                        app_state
+                            .settings
+                            .mod_links
+                            .manifests
+                            .iter()
+                            .for_each(|manifest| {
+                                if manifest.enabled {
+                                    println!("{}", manifest.name);
+                                }
+                            });
+                    }
+                    "disabled" => {
+                        app_state
+                            .settings
+                            .mod_links
+                            .manifests
+                            .iter()
+                            .for_each(|manifest| {
+                                if !manifest.enabled && manifest.installed {
+                                    println!("{}", manifest.name);
+                                }
+                            });
+                    }
+                    "uninstalled" => {
+                        app_state
+                            .settings
+                            .mod_links
+                            .manifests
+                            .iter()
+                            .for_each(|manifest| {
+                                if !manifest.installed {
+                                    println!("{}", manifest.name);
+                                }
+                            });
+                    }
+                    _ => {
+                        app_state
+                            .settings
+                            .mod_links
+                            .manifests
+                            .iter()
+                            .for_each(|manifest| {
+                                if manifest.name.to_lowercase().contains(filter.as_str()) {
+                                    println!("{}", manifest.name);
+                                }
+                            });
+                    }
+                },
+                None => {
+                    app_state
+                        .settings
+                        .mod_links
+                        .manifests
+                        .iter()
+                        .for_each(|manifest| {
                             println!("{}", manifest.name);
-                        }
-                    },
-                    None => println!("{}", manifest.name),
+                        });
                 }
-            });
-        },
-        SubCommand::Rm { mod_name } => { 
-            uninstall_mod(mod_name, state);
-        },
+            }
+        }
+        SubCommand::Rm { mut query } => {
+            query = query.replace(" ", "").to_lowercase();
+            match query.as_str() {
+                "*" => {
+                    let manifests: Vec<LocalModManifest>;
+                    {
+                        let app_state = state.0.lock().unwrap();
+                        manifests = app_state.settings.mod_links.manifests.clone()
+                    }
+
+                    manifests.iter().for_each(|manifest| {
+                        if manifest.installed {
+                            uninstall_mod(manifest.name.clone(), state);
+                        }
+                    });
+                }
+                "api" => {
+                    disable_api(state);
+                }
+                "profile" => {
+                    delete_profile(state);
+                }
+                _ => {
+                    uninstall_mod(query, state);
+                }
+            }
+        }
         SubCommand::SetPath { path } => {
             let app_state = state.0.lock().unwrap();
             set_game_path(app_state, path);
-        },
-        SubCommand::Update { mod_name } => {
-            let filtered_mod_name = mod_name.replace(" ", "").to_lowercase();
-            println!("Filtered mod name: {}", filtered_mod_name);
+        }
+        SubCommand::Update { query } => match query.as_str() {
+            "profile" => set_profile(state),
+            _ => {
+                let filtered_mod_name = query.replace(" ", "").to_lowercase();
+                println!("Filtered mod name: {}", filtered_mod_name);
+            }
         },
     }
 }
@@ -865,6 +1192,140 @@ fn print_and_log(message: String) {
     info!("{}", message);
 }
 
+/// Enables the Modding API
+/// # Arguments
+/// * `state` - The state of the application
+fn enable_api(state: &AppState) {
+    let mods_path: String;
+    {
+        let app_state = state.0.lock().unwrap();
+        mods_path = app_state.settings.mods_path.clone();
+    }
+    let managed_path: PathBuf = [mods_path.as_str(), ".."].iter().collect();
+    let assembly: PathBuf = [managed_path.to_str().unwrap(), "Assembly-CSharp.dll"]
+        .iter()
+        .collect();
+    let vanilla_assembly: PathBuf = [
+        managed_path.to_str().unwrap(),
+        "Assembly-CSharp.dll.vanilla",
+    ]
+    .iter()
+    .collect();
+    let modded_assembly: PathBuf = [managed_path.to_str().unwrap(), "Assembly-CSharp.dll.modded"]
+        .iter()
+        .collect();
+    if modded_assembly.exists() && !vanilla_assembly.exists() {
+        match fs::rename(assembly.clone(), vanilla_assembly) {
+            Ok(_) => info!("Successfully renamed Assembly-CSharp to modded assembly backup."),
+            Err(e) => error!(
+                "Failed to rename Assembly-CSharp to modded assembly backup: {}",
+                e
+            ),
+        }
+
+        match fs::rename(modded_assembly, assembly) {
+            Ok(_) => info!("Successfully replaced vanilla Assembly-CSharp with modded assembly."),
+            Err(e) => error!(
+                "Failed to replace vanilla Assembly-CSharp with modded assembly: {}",
+                e
+            ),
+        }
+        return;
+    } else if !modded_assembly.exists() && !vanilla_assembly.exists() {
+        warn!("Neither the modded or vanilla assembly backups exists, downloading API.");
+        match fs::rename(assembly.clone(), vanilla_assembly) {
+            Ok(_) => info!("Successfully renamed Assembly-CSharp to modded assembly backup."),
+            Err(e) => error!(
+                "Failed to rename Assembly-CSharp to modded assembly backup: {}",
+                e
+            ),
+        }
+        install_api(state);
+        return;
+    } else if modded_assembly.exists() && vanilla_assembly.exists() {
+        warn!("Somehow, both assembly backups exist.");
+        match fs::remove_file(modded_assembly) {
+            Ok(_) => info!("Successfully removed modded backup."),
+            Err(e) => error!("Failed to remove modded backup: {}", e),
+        }
+        match fs::remove_file(vanilla_assembly) {
+            Ok(_) => info!("Successfully removed vanilla backup."),
+            Err(e) => error!("Failed to remove vanilla backup: {}", e),
+        }
+        return;
+    }
+
+    warn!("No action was taken.");
+}
+
+/// Sets the current mod profile in settings
+/// # Arguments
+/// * `state` - The state of the application
+fn set_profile(state: &AppState) {
+    let mods_to_install: Vec<String>;
+    let manifests: Vec<LocalModManifest>;
+    {
+        let mut app_state = state.0.lock().unwrap();
+        let mut profile_name = String::new();
+        print!("Enter profile name: ");
+        io::stdout().flush().unwrap();
+        io::stdin()
+            .read_line(&mut profile_name)
+            .expect("Failed to read line.");
+        profile_name = profile_name.trim().to_string();
+        let mut profile_exists = false;
+        for profile in app_state.settings.profiles.iter() {
+            if profile.name == profile_name {
+                profile_exists = true;
+                break;
+            }
+        }
+
+        while !profile_exists {
+            println!("Profile {:?} does not exist.", profile_name);
+            profile_name = "".to_string();
+            print!("Enter profile name: ");
+            io::stdout().flush().unwrap();
+            io::stdin()
+                .read_line(&mut profile_name)
+                .expect("Failed to read line.");
+            profile_name = profile_name.trim().to_string();
+            profile_exists = false;
+            for profile in app_state.settings.profiles.iter() {
+                if profile.name == profile_name {
+                    profile_exists = true;
+                    break;
+                }
+            }
+        }
+
+        app_state.settings.current_profile = profile_name.clone();
+
+        match app_state
+            .settings
+            .profiles
+            .iter()
+            .find(|profile| profile.name == profile_name)
+        {
+            Some(profile) => mods_to_install = profile.mods.clone(),
+            None => {
+                error!("Failed to find profile {:?}.", profile_name);
+                return;
+            }
+        }
+
+        manifests = app_state.settings.mod_links.manifests.clone();
+    }
+
+    manifests.iter().for_each(|manifest| {
+        if mods_to_install.contains(&manifest.name) && !manifest.enabled {
+            install_mod(manifest.name.clone(), state);
+        } else if !mods_to_install.contains(&manifest.name) && manifest.enabled {
+            disable_mod(manifest.name.clone(), state);
+        }
+    });
+}
+
 /// Removes a mod folder from disk
 /// # Arguments
 /// * `mod_name` - The name of the mod folder
@@ -872,7 +1333,7 @@ fn print_and_log(message: String) {
 fn uninstall_mod(mut mod_name: String, state: &AppState) {
     info!("Uninstalling mod {:?}", mod_name);
     {
-        let mut manifests = Vec::new();
+        let manifests: Vec<LocalModManifest>;
         {
             let app_state = state.0.lock().unwrap();
             manifests = app_state.settings.mod_links.manifests.clone();
@@ -882,7 +1343,7 @@ fn uninstall_mod(mut mod_name: String, state: &AppState) {
         let mods_path = &app_state.settings.mods_path;
 
         for manifest in manifests {
-            if manifest.name.replace(" ", "").to_lowercase() == mod_name.replace(" ", "").to_lowercase() {
+            if manifest.name.replace(" ", "").to_lowercase() == mod_name {
                 mod_name = manifest.name;
             }
         }
@@ -890,7 +1351,7 @@ fn uninstall_mod(mut mod_name: String, state: &AppState) {
         let mod_path: PathBuf = [mods_path.to_string(), mod_name.clone()].iter().collect();
         let disabled_mod_path: PathBuf = [
             mods_path.to_string(),
-            String::from("Disabled"),
+            "Disabled".to_string(),
             mod_name.clone(),
         ]
         .iter()
